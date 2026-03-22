@@ -1,0 +1,14 @@
+apiVersion: v2
+name: opencode-scale
+description: A Helm chart for opencode-scale - scalable coding agent infrastructure
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - opencode
+  - agents
+  - coding
+  - kubernetes
+home: https://github.com/opencode-scale/opencode-scale
+maintainers:
+  - name: opencode-scale

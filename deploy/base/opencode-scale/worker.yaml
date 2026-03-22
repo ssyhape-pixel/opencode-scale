@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-scale-worker
+  labels:
+    app: opencode-scale-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: opencode-scale-worker
+  template:
+    metadata:
+      labels:
+        app: opencode-scale-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/opencode-scale/opencode-scale:latest
+          command: ["/worker"]
+          env:
+            - name: TEMPORAL_HOST_PORT
+              value: "temporal:7233"
+            - name: TEMPORAL_NAMESPACE
+              value: "opencode-scale"
+            - name: TEMPORAL_TASK_QUEUE
+              value: "coding-tasks"
+            - name: POOL_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OTEL_ENDPOINT
+              value: "otel-collector:4317"
+          ports:
+            - containerPort: 9090
+              name: metrics
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opencode-scale-worker
+  labels:
+    app: opencode-scale-worker
+spec:
+  selector:
+    app: opencode-scale-worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090

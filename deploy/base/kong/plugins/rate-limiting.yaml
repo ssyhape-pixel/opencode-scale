@@ -1,0 +1,9 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limiting
+plugin: rate-limiting
+config:
+  minute: 60
+  policy: redis
+  redis_host: redis.default.svc.cluster.local

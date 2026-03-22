@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - ../../base/archival
+
+namespace: opencode-scale
+
+patches:
+  # Mount archival config template into Temporal server
+  - target:
+      kind: Deployment
+      name: temporal-server
+    patch: |
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: archival-config
+          configMap:
+            name: temporal-archival-config
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts
+        value:
+          - name: archival-config
+            mountPath: /etc/temporal/config/config_template.yaml
+            subPath: config_template.yaml
+            readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARCHIVAL_ENABLED
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARCHIVAL_S3_REGION
+          value: "us-east-1"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARCHIVAL_S3_ENDPOINT
+          value: "http://minio:9000"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARCHIVAL_S3_BUCKET
+          value: "temporal-archival"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARCHIVAL_S3_FORCE_PATH_STYLE
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AWS_ACCESS_KEY_ID
+          value: "minioadmin"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AWS_SECRET_ACCESS_KEY
+          value: "minioadmin"

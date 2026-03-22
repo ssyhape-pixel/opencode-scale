@@ -1,0 +1,50 @@
+# Overlay for rate-limit testing with LiteLLM key rotation.
+#
+# Usage:
+#   docker compose -f docker-compose.yaml -f docker-compose.ratelimit.yaml up --build
+#
+# This adds:
+#   - mock-llm-api  (:4099)  — fake OpenAI API with per-key rate limiting
+#   - litellm       (:4000)  — real LiteLLM proxy with 3 fake Gemini keys
+#
+# Architecture:
+#   压测工具 → Router(:8080) → Temporal → Worker → mock-opencode(:4096) → LiteLLM(:4000) → mock-llm-api(:4099)
+#                                                                          ├── key-001: 5 RPM
+#                                                                          ├── key-002: 5 RPM
+#                                                                          └── key-003: 5 RPM
+#
+# Observe rate limit behavior:
+#   curl http://localhost:4099/debug/rate-limits    # per-key usage
+#   curl http://localhost:4000/health               # LiteLLM health + model status
+#   docker compose logs litellm -f                  # watch key rotation in action
+
+services:
+  mock-llm-api:
+    build:
+      context: .
+      target: mock-llm-api
+    ports:
+      - "4099:4099"
+    command: ["/mock-llm-api", "-rpm", "5", "-tpm", "10000", "-latency", "200"]
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    volumes:
+      - ./hack/litellm-config.yaml:/etc/litellm/config.yaml:ro
+    depends_on:
+      - mock-llm-api
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Override mock-opencode to forward to LiteLLM instead of responding directly.
+  # (Optional: only needed if you want mock-opencode to actually call LiteLLM)
+  mock-opencode:
+    environment:
+      - LITELLM_ENDPOINT=http://litellm:4000

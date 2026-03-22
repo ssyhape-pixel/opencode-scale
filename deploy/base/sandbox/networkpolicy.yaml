@@ -1,0 +1,155 @@
+# ============================================================================
+# NetworkPolicy: Sandbox Pod Isolation
+# ============================================================================
+# These policies enforce network segmentation between sandbox pods and the
+# opencode-scale control plane. Sandbox pods are untrusted workloads running
+# user code in gVisor; they MUST be restricted to the minimum required
+# connectivity.
+#
+# Traffic matrix:
+#
+#   Sandbox pods (app.kubernetes.io/managed-by: opencode-scale):
+#     Ingress:  router -> sandbox:4096 ONLY
+#     Egress:   sandbox -> litellm:4000, kube-dns:53 (UDP+TCP) ONLY
+#
+#   Control-plane pods (router, worker, controller):
+#     Ingress:  any -> router:8080 (API), any -> router:9090 (metrics)
+#     Egress:   control-plane -> temporal:7233, sandbox:4096, kube-dns:53
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 1. sandbox-isolation -- restricts all sandbox pod traffic
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-isolation
+  labels:
+    app.kubernetes.io/part-of: opencode-scale
+    app.kubernetes.io/component: sandbox
+spec:
+  # Target every pod that the opencode-scale controller provisions as a sandbox.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: opencode-scale
+
+  # Apply to both directions so the default for sandbox pods is deny-all;
+  # only the rules listed below will be permitted.
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # --- Ingress rules --------------------------------------------------------
+  # Allow the router (and only the router) to reach the opencode server
+  # inside the sandbox on port 4096.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: opencode-scale-router
+      ports:
+        - protocol: TCP
+          port: 4096
+
+  # --- Egress rules ---------------------------------------------------------
+  egress:
+    # Allow sandbox -> LiteLLM proxy so the coding agent can call LLM APIs.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: litellm
+      ports:
+        - protocol: TCP
+          port: 4000
+
+    # Allow DNS resolution (both UDP and TCP on port 53).
+    # Targets kube-system/kube-dns; the namespaceSelector ensures we can
+    # reach the DNS service even though it lives outside the workload
+    # namespace.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# ----------------------------------------------------------------------------
+# 2. control-plane-network -- governs router, worker, and controller traffic
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: control-plane-network
+  labels:
+    app.kubernetes.io/part-of: opencode-scale
+    app.kubernetes.io/component: control-plane
+spec:
+  # Select the three control-plane components by their shared label value.
+  # All three deployments carry app.kubernetes.io/part-of: opencode-scale
+  # (injected by Kustomize commonLabels). We further narrow the selection
+  # to only the control-plane pods using an explicit set of app labels via
+  # matchExpressions.
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - opencode-scale-router
+          - opencode-scale-worker
+          - opencode-scale-controller
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # --- Ingress rules --------------------------------------------------------
+  ingress:
+    # Public API: any source may reach the router on its HTTP port.
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Metrics scrape: any source (typically Prometheus) may reach the router
+    # on its metrics port.
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 9090
+
+  # --- Egress rules ---------------------------------------------------------
+  egress:
+    # Control plane -> Temporal server (gRPC workflow orchestration).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: temporal
+      ports:
+        - protocol: TCP
+          port: 7233
+
+    # Control plane -> sandbox pods (router forwards coding requests).
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: opencode-scale
+      ports:
+        - protocol: TCP
+          port: 4096
+
+    # DNS resolution (UDP + TCP).
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

@@ -1,0 +1,47 @@
+# LiteLLM configuration for local rate-limit testing.
+# Points to mock-llm-api with multiple fake API keys to test key rotation.
+#
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.ratelimit.yaml up
+#
+# mock-llm-api default: 5 RPM per key, so with 3 keys you get ~15 RPM total.
+# LiteLLM will automatically rotate to the next key when one gets 429'd.
+
+model_list:
+  # Simulated Gemini keys — each key has its own rate limit in mock-llm-api.
+  - model_name: "gemini-2.5-pro"
+    litellm_params:
+      model: "openai/gemini-2.5-pro"       # LiteLLM treats it as OpenAI-compatible
+      api_base: "http://mock-llm-api:4099/v1"
+      api_key: "fake-gemini-key-001"
+  - model_name: "gemini-2.5-pro"
+    litellm_params:
+      model: "openai/gemini-2.5-pro"
+      api_base: "http://mock-llm-api:4099/v1"
+      api_key: "fake-gemini-key-002"
+  - model_name: "gemini-2.5-pro"
+    litellm_params:
+      model: "openai/gemini-2.5-pro"
+      api_base: "http://mock-llm-api:4099/v1"
+      api_key: "fake-gemini-key-003"
+
+  # Simulated fallback model.
+  - model_name: "gpt-4o-fallback"
+    litellm_params:
+      model: "openai/gpt-4o"
+      api_base: "http://mock-llm-api:4099/v1"
+      api_key: "fake-openai-key-001"
+
+router_settings:
+  # When one key gets 429, rotate to the next.
+  routing_strategy: "usage-based-routing-v2"
+  num_retries: 3
+  retry_after: 5                   # seconds between retries
+  allowed_fails: 2                 # mark deployment unhealthy after N fails
+  cooldown_time: 30                # seconds to cooldown a failed deployment
+  fallbacks:
+    - gemini-2.5-pro: ["gpt-4o-fallback"]
+
+litellm_settings:
+  # Expose rate-limit headers so we can observe them.
+  set_verbose: false
+  drop_params: true

@@ -1,0 +1,26 @@
+opencode-scale has been deployed successfully.
+
+Components:
+  - Router:     {{ .Values.router.replicaCount }} replica(s)
+  - Controller: {{ .Values.controller.replicaCount }} replica(s)
+  - Worker:     {{ .Values.worker.replicaCount }} replica(s)
+
+Router endpoint:
+{{- if contains "NodePort" .Values.router.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "opencode-scale.fullname" . }}-router)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.router.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  Watch the status with:
+    kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "opencode-scale.fullname" . }}-router
+
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "opencode-scale.fullname" . }}-router --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.router.service.httpPort }}
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "opencode-scale.fullname" . }}-router {{ .Values.router.service.httpPort }}:{{ .Values.router.service.httpPort }}
+  echo "Visit http://127.0.0.1:{{ .Values.router.service.httpPort }}"
+{{- end }}
+
+Verify the deployment:
+  kubectl --namespace {{ .Release.Namespace }} get pods -l "app.kubernetes.io/instance={{ .Release.Name }}"

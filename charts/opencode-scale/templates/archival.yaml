@@ -1,0 +1,224 @@
+{{- if .Values.archival.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-temporal-archival-config
+  labels:
+    {{- include "opencode-scale.labels" . | nindent 4 }}
+data:
+  config_template.yaml: |
+    log:
+      stdout: true
+      level: info
+
+    persistence:
+      defaultStore: default
+      visibilityStore: visibility
+      numHistoryShards: 4
+      datastores:
+        default:
+          sql:
+            pluginName: "postgres12"
+            databaseName: "temporal"
+            connectAddr: "{{`{{ default .Env.POSTGRES_SEEDS "postgresql" }}`}}:{{`{{ default .Env.DB_PORT "5432" }}`}}"
+            connectProtocol: "tcp"
+            user: "{{`{{ default .Env.POSTGRES_USER "temporal" }}`}}"
+            password: "{{`{{ default .Env.POSTGRES_PWD "temporal" }}`}}"
+            maxConns: 20
+            maxIdleConns: 20
+            maxConnLifetime: "1h"
+        visibility:
+          sql:
+            pluginName: "postgres12"
+            databaseName: "temporal_visibility"
+            connectAddr: "{{`{{ default .Env.POSTGRES_SEEDS "postgresql" }}`}}:{{`{{ default .Env.DB_PORT "5432" }}`}}"
+            connectProtocol: "tcp"
+            user: "{{`{{ default .Env.POSTGRES_USER "temporal" }}`}}"
+            password: "{{`{{ default .Env.POSTGRES_PWD "temporal" }}`}}"
+            maxConns: 10
+            maxIdleConns: 10
+            maxConnLifetime: "1h"
+
+    global:
+      membership:
+        maxJoinDuration: 30s
+      pprof:
+        port: 7936
+      archival:
+        history:
+          state: "enabled"
+          enableRead: true
+          provider:
+            s3store:
+              region: {{ .Values.archival.region | quote }}
+              {{- if .Values.archival.endpoint }}
+              endpoint: {{ .Values.archival.endpoint | quote }}
+              {{- end }}
+              s3ForcePathStyle: {{ .Values.archival.s3ForcePathStyle }}
+        visibility:
+          state: "enabled"
+          enableRead: true
+          provider:
+            s3store:
+              region: {{ .Values.archival.region | quote }}
+              {{- if .Values.archival.endpoint }}
+              endpoint: {{ .Values.archival.endpoint | quote }}
+              {{- end }}
+              s3ForcePathStyle: {{ .Values.archival.s3ForcePathStyle }}
+
+    namespaceDefaults:
+      archival:
+        history:
+          state: "enabled"
+          URI: "s3://{{ .Values.archival.bucket }}/history"
+        visibility:
+          state: "enabled"
+          URI: "s3://{{ .Values.archival.bucket }}/visibility"
+
+    services:
+      frontend:
+        rpc:
+          grpcPort: 7233
+          membershipPort: 6933
+          bindOnLocalHost: false
+          bindOnIP: "0.0.0.0"
+      matching:
+        rpc:
+          grpcPort: 7235
+          membershipPort: 6935
+          bindOnLocalHost: false
+          bindOnIP: "0.0.0.0"
+      history:
+        rpc:
+          grpcPort: 7234
+          membershipPort: 6934
+          bindOnLocalHost: false
+          bindOnIP: "0.0.0.0"
+      worker:
+        rpc:
+          grpcPort: 7239
+          membershipPort: 6939
+          bindOnLocalHost: false
+          bindOnIP: "0.0.0.0"
+
+    clusterMetadata:
+      enableGlobalNamespace: false
+      failoverVersionIncrement: 10
+      masterClusterName: "active"
+      currentClusterName: "active"
+      clusterInformation:
+        active:
+          enabled: true
+          initialFailoverVersion: 1
+          rpcName: "frontend"
+          rpcAddress: "localhost:7233"
+
+    dcRedirectionPolicy:
+      policy: "noop"
+
+{{- if .Values.archival.minio.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-minio-data
+  labels:
+    {{- include "opencode-scale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.archival.minio.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-minio
+  labels:
+    {{- include "opencode-scale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: minio
+      {{- include "opencode-scale.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: minio
+        {{- include "opencode-scale.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: minio
+          image: {{ .Values.archival.minio.image }}
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - containerPort: 9000
+              name: s3
+            - containerPort: 9001
+              name: console
+          env:
+            - name: MINIO_ROOT_USER
+              value: {{ .Values.archival.minio.rootUser | quote }}
+            - name: MINIO_ROOT_PASSWORD
+              value: {{ .Values.archival.minio.rootPassword | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "opencode-scale.fullname" . }}-minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-minio
+  labels:
+    {{- include "opencode-scale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  selector:
+    app.kubernetes.io/component: minio
+    {{- include "opencode-scale.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-minio-init
+  labels:
+    {{- include "opencode-scale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio-init
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mc alias set myminio http://{{ include "opencode-scale.fullname" . }}-minio:9000 {{ .Values.archival.minio.rootUser }} {{ .Values.archival.minio.rootPassword }} &&
+              mc mb --ignore-existing myminio/{{ .Values.archival.bucket }} &&
+              echo 'Bucket ready.'
+{{- end }}
+{{- end }}

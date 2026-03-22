@@ -1,0 +1,40 @@
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: opencode-server
+spec:
+  podTemplate:
+    spec:
+      runtimeClassName: gvisor
+      containers:
+        - name: opencode
+          image: ghcr.io/opencode-ai/opencode:latest
+          command: ["opencode", "serve"]
+          args: ["--port=4096", "--hostname=0.0.0.0"]
+          ports:
+            - containerPort: 4096
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4096
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4096
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          env:
+            - name: LITELLM_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: opencode-scale-config
+                  key: litellm-endpoint

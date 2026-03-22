@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  labels:
+    app.kubernetes.io/part-of: opencode-scale
+    app.kubernetes.io/component: minio-init
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mc alias set myminio http://minio:9000 minioadmin minioadmin &&
+              mc mb --ignore-existing myminio/temporal-archival &&
+              echo 'Bucket ready.'

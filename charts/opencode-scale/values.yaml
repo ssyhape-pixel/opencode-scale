@@ -1,0 +1,243 @@
+# Default values for opencode-scale.
+
+# -- Override the release name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""
+
+# -- Common image settings shared across components
+image:
+  # -- Pull policy for all component images
+  pullPolicy: IfNotPresent
+  # -- Image pull secrets
+  pullSecrets: []
+
+# -- Service account configuration
+serviceAccount:
+  # -- Whether to create a service account
+  create: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- Name override (defaults to fullname)
+  name: ""
+
+# -- Common pod annotations applied to all deployments
+podAnnotations: {}
+
+# -- Common pod security context applied to all deployments
+podSecurityContext: {}
+  # fsGroup: 1000
+
+# -- Common container security context applied to all deployments
+securityContext: {}
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# -- Node selector applied to all deployments
+nodeSelector: {}
+
+# -- Tolerations applied to all deployments
+tolerations: []
+
+# -- Affinity rules applied to all deployments
+affinity: {}
+
+# ---------------------------------------------------------------
+# Shared configuration (rendered into the ConfigMap)
+# ---------------------------------------------------------------
+config:
+  pool:
+    minReady: 3
+    maxSize: 50
+    idleTimeout: "10m"
+    gcInterval: "30s"
+    warmPoolName: "opencode-pool"
+    # namespace is set automatically to the release namespace
+  router:
+    listenAddr: ":8080"
+    sessionHeader: "X-Session-ID"
+    sessionCookie: "session_id"
+    sessionQuery: "session_id"
+  temporal:
+    hostPort: "temporal:7233"
+    namespace: "opencode-scale"
+    taskQueue: "coding-tasks"
+  telemetry:
+    serviceName: "opencode-scale"
+    otelEndpoint: "otel-collector:4317"
+    prometheusPort: 9090
+    logLevel: "info"
+  litellm:
+    endpoint: "http://litellm:4000"
+    # apiKey is set via litellmApiKeySecret below
+
+# -- Existing secret name that contains the LiteLLM API key under key "api-key"
+litellmApiKeySecret: ""
+
+# ---------------------------------------------------------------
+# Router
+# ---------------------------------------------------------------
+router:
+  # -- Number of router replicas
+  replicaCount: 2
+
+  image:
+    repository: ghcr.io/opencode-scale/opencode-scale-router
+    tag: ""  # defaults to appVersion
+
+  # -- Extra environment variables for the router container
+  extraEnv: []
+
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+  # -- Readiness probe configuration
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 3
+    periodSeconds: 5
+
+  # -- Liveness probe configuration
+  livenessProbe: {}
+
+  service:
+    # -- Service type
+    type: ClusterIP
+    # -- HTTP port
+    httpPort: 8080
+    # -- Metrics port
+    metricsPort: 9090
+    # -- Annotations for the service
+    annotations: {}
+
+  # -- Pod-level overrides
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------
+# Controller
+# ---------------------------------------------------------------
+controller:
+  # -- Number of controller replicas (typically 1 for leader-elected controllers)
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/opencode-scale/opencode-scale-controller
+    tag: ""  # defaults to appVersion
+
+  # -- Extra environment variables for the controller container
+  extraEnv: []
+
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  # -- Readiness probe configuration
+  readinessProbe: {}
+
+  # -- Liveness probe configuration
+  livenessProbe: {}
+
+  service:
+    # -- Metrics port
+    metricsPort: 9090
+    # -- Annotations for the service
+    annotations: {}
+
+  # -- Whether to create RBAC resources for the controller
+  rbac:
+    create: true
+
+  # -- Pod-level overrides
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------
+# Worker
+# ---------------------------------------------------------------
+worker:
+  # -- Number of worker replicas
+  replicaCount: 2
+
+  image:
+    repository: ghcr.io/opencode-scale/opencode-scale-worker
+    tag: ""  # defaults to appVersion
+
+  # -- Extra environment variables for the worker container
+  extraEnv: []
+
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+  # -- Readiness probe configuration
+  readinessProbe: {}
+
+  # -- Liveness probe configuration
+  livenessProbe: {}
+
+  service:
+    # -- Whether to create a service for the worker (for metrics scraping)
+    enabled: true
+    # -- Metrics port
+    metricsPort: 9090
+    # -- Annotations for the service
+    annotations: {}
+
+  # -- Pod-level overrides
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------
+# Archival (S3/MinIO)
+# ---------------------------------------------------------------
+archival:
+  # -- Enable S3/MinIO archival for completed workflow histories
+  enabled: false
+  # -- S3 bucket name for archived data
+  bucket: "temporal-archival"
+  # -- S3 region
+  region: "us-east-1"
+  # -- S3 endpoint (empty = AWS S3; set for MinIO or S3-compatible storage)
+  endpoint: ""
+  # -- Use S3 path-style addressing (required for MinIO)
+  s3ForcePathStyle: true
+  # -- Namespace retention period before archival
+  retention: "72h"
+  # -- Existing K8s Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+  credentialsSecret: ""
+  minio:
+    # -- Deploy a MinIO instance for local archival storage
+    enabled: false
+    # -- MinIO image
+    image: minio/minio:latest
+    # -- MinIO root user
+    rootUser: minioadmin
+    # -- MinIO root password
+    rootPassword: minioadmin
+    # -- PVC storage size
+    storage: 10Gi

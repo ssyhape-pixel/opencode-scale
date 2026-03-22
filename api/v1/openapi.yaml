@@ -1,0 +1,220 @@
+openapi: "3.1.0"
+info:
+  title: opencode-scale API
+  description: API for submitting and monitoring coding tasks executed in sandboxed environments.
+  version: "0.1.0"
+  license:
+    name: Apache-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /api/v1/tasks:
+    post:
+      operationId: createTask
+      summary: Create a coding task
+      description: Submit a new coding task for execution in a sandboxed environment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskRequest"
+      responses:
+        "202":
+          description: Task accepted and queued for execution.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Pool exhausted; too many concurrent tasks.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{taskId}:
+    get:
+      operationId: getTask
+      summary: Get task status
+      description: Retrieve the current status and result of a coding task.
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "404":
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{taskId}/stream:
+    get:
+      operationId: streamTask
+      summary: Stream task progress
+      description: |
+        Server-Sent Events stream that emits progress updates for a running
+        coding task. The stream closes when the task reaches a terminal state
+        (completed, failed, or timeout).
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SSE stream of task progress events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Returns the health status of the service including pool utilisation metrics.
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+components:
+  schemas:
+    TaskStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - completed
+        - failed
+        - timeout
+
+    TaskRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          description: The coding task prompt to execute.
+        outputSchema:
+          type: string
+          description: Optional JSON Schema that the task result must conform to.
+        timeout:
+          type: integer
+          description: Maximum execution time in seconds.
+        userId:
+          type: string
+          description: Optional user identifier.
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Arbitrary key-value metadata attached to the task.
+
+    TaskResponse:
+      type: object
+      required:
+        - taskId
+        - status
+        - createdAt
+      properties:
+        taskId:
+          type: string
+        sessionId:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        result:
+          type: string
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    QueuePosition:
+      type: object
+      required:
+        - position
+        - estimatedWait
+      properties:
+        position:
+          type: integer
+        estimatedWait:
+          type: integer
+          description: Estimated wait time in nanoseconds.
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - poolUtilization
+        - poolAllocated
+        - poolMaxSize
+        - queueDepth
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        poolUtilization:
+          type: number
+          format: double
+        poolAllocated:
+          type: integer
+        poolMaxSize:
+          type: integer
+        queueDepth:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+        message:
+          type: string

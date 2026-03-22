@@ -1,0 +1,8 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: prometheus
+plugin: prometheus
+config:
+  per_consumer: true
+  latency_metrics: true

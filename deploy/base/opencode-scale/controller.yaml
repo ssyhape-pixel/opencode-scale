@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-scale-controller
+  labels:
+    app: opencode-scale-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opencode-scale-controller
+  template:
+    metadata:
+      labels:
+        app: opencode-scale-controller
+    spec:
+      serviceAccountName: opencode-scale-controller
+      containers:
+        - name: controller
+          image: ghcr.io/opencode-scale/opencode-scale:latest
+          command: ["/controller"]
+          env:
+            - name: POOL_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POOL_WARM_POOL_NAME
+              value: "opencode-pool"
+            - name: OTEL_ENDPOINT
+              value: "otel-collector:4317"
+          ports:
+            - containerPort: 9090
+              name: metrics
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opencode-scale-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: opencode-scale-controller
+rules:
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes", "sandboxclaims", "sandboxtemplates", "sandboxwarmpools"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: opencode-scale-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: opencode-scale-controller
+subjects:
+  - kind: ServiceAccount
+    name: opencode-scale-controller
+    namespace: default

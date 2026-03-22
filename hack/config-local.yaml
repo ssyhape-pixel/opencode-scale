@@ -1,0 +1,28 @@
+pool:
+  minReady: 1
+  maxSize: 100
+  idleTimeout: 5m
+  gcInterval: 30s
+  namespace: opencode-scale
+  mode: local
+  mockTarget: "mock-opencode:4096"
+
+router:
+  listenAddr: ":8080"
+  sessionHeader: "X-Session-ID"
+  sessionCookie: "session_id"
+  sessionQuery: "session_id"
+
+temporal:
+  hostPort: "temporal:7233"
+  namespace: "default"
+  taskQueue: "coding-tasks"
+
+telemetry:
+  serviceName: "opencode-scale"
+  otelEndpoint: ""
+  prometheusPort: 9090
+  logLevel: "debug"
+
+litellm:
+  endpoint: "http://localhost:4000"

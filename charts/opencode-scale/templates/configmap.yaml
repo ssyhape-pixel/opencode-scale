@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "opencode-scale.configmapName" . }}
+  labels:
+    {{- include "opencode-scale.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    pool:
+      minReady: {{ .Values.config.pool.minReady }}
+      maxSize: {{ .Values.config.pool.maxSize }}
+      idleTimeout: {{ .Values.config.pool.idleTimeout | quote }}
+      gcInterval: {{ .Values.config.pool.gcInterval | quote }}
+      warmPoolName: {{ .Values.config.pool.warmPoolName | quote }}
+      namespace: {{ .Release.Namespace | quote }}
+    router:
+      listenAddr: {{ .Values.config.router.listenAddr | quote }}
+      sessionHeader: {{ .Values.config.router.sessionHeader | quote }}
+      sessionCookie: {{ .Values.config.router.sessionCookie | quote }}
+      sessionQuery: {{ .Values.config.router.sessionQuery | quote }}
+    temporal:
+      hostPort: {{ .Values.config.temporal.hostPort | quote }}
+      namespace: {{ .Values.config.temporal.namespace | quote }}
+      taskQueue: {{ .Values.config.temporal.taskQueue | quote }}
+    telemetry:
+      serviceName: {{ .Values.config.telemetry.serviceName | quote }}
+      otelEndpoint: {{ .Values.config.telemetry.otelEndpoint | quote }}
+      prometheusPort: {{ .Values.config.telemetry.prometheusPort }}
+      logLevel: {{ .Values.config.telemetry.logLevel | quote }}
+    litellm:
+      endpoint: {{ .Values.config.litellm.endpoint | quote }}

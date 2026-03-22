@@ -1,0 +1,135 @@
+log:
+    stdout: true
+    level: {{ default .Env.LOG_LEVEL "info" }}
+
+persistence:
+    numHistoryShards: {{ default .Env.NUM_HISTORY_SHARDS "4" }}
+    defaultStore: default
+    visibilityStore: visibility
+    datastores:
+        default:
+            sql:
+                pluginName: "postgres12"
+                databaseName: "{{ default .Env.DBNAME "temporal" }}"
+                connectAddr: "{{ default .Env.POSTGRES_SEEDS "" }}:{{ default .Env.DB_PORT "5432" }}"
+                connectProtocol: "tcp"
+                user: "{{ default .Env.POSTGRES_USER "" }}"
+                password: "{{ default .Env.POSTGRES_PWD "" }}"
+                maxConns: {{ default .Env.SQL_MAX_CONNS "20" }}
+                maxIdleConns: {{ default .Env.SQL_MAX_IDLE_CONNS "20" }}
+                maxConnLifetime: {{ default .Env.SQL_MAX_CONN_TIME "1h" }}
+                tls:
+                    enabled: {{ default .Env.SQL_TLS_ENABLED "false" }}
+        visibility:
+            sql:
+                pluginName: "postgres12"
+                databaseName: "{{ default .Env.VISIBILITY_DBNAME "temporal_visibility" }}"
+                connectAddr: "{{ default .Env.POSTGRES_SEEDS "" }}:{{ default .Env.DB_PORT "5432" }}"
+                connectProtocol: "tcp"
+                user: "{{ default .Env.POSTGRES_USER "" }}"
+                password: "{{ default .Env.POSTGRES_PWD "" }}"
+                maxConns: {{ default .Env.SQL_VIS_MAX_CONNS "10" }}
+                maxIdleConns: {{ default .Env.SQL_VIS_MAX_IDLE_CONNS "10" }}
+                maxConnLifetime: {{ default .Env.SQL_VIS_MAX_CONN_TIME "1h" }}
+                tls:
+                    enabled: {{ default .Env.SQL_TLS_ENABLED "false" }}
+
+global:
+    membership:
+        maxJoinDuration: 30s
+        broadcastAddress: "{{ default .Env.TEMPORAL_BROADCAST_ADDRESS "" }}"
+    pprof:
+        port: {{ default .Env.PPROF_PORT "0" }}
+
+{{- $temporalGrpcPort := default .Env.FRONTEND_GRPC_PORT "7233" }}
+services:
+    frontend:
+        rpc:
+            grpcPort: {{ $temporalGrpcPort }}
+            membershipPort: {{ default .Env.FRONTEND_MEMBERSHIP_PORT "6933" }}
+            bindOnIP: "{{ default .Env.BIND_ON_IP "127.0.0.1" }}"
+
+    matching:
+        rpc:
+            grpcPort: {{ default .Env.MATCHING_GRPC_PORT "7235" }}
+            membershipPort: {{ default .Env.MATCHING_MEMBERSHIP_PORT "6935" }}
+            bindOnIP: "{{ default .Env.BIND_ON_IP "127.0.0.1" }}"
+
+    history:
+        rpc:
+            grpcPort: {{ default .Env.HISTORY_GRPC_PORT "7234" }}
+            membershipPort: {{ default .Env.HISTORY_MEMBERSHIP_PORT "6934" }}
+            bindOnIP: "{{ default .Env.BIND_ON_IP "127.0.0.1" }}"
+
+    worker:
+        rpc:
+            grpcPort: {{ default .Env.WORKER_GRPC_PORT "7239" }}
+            membershipPort: {{ default .Env.WORKER_MEMBERSHIP_PORT "6939" }}
+            bindOnIP: "{{ default .Env.BIND_ON_IP "127.0.0.1" }}"
+
+clusterMetadata:
+    enableGlobalNamespace: false
+    failoverVersionIncrement: 10
+    masterClusterName: "active"
+    currentClusterName: "active"
+    clusterInformation:
+        active:
+            enabled: true
+            initialFailoverVersion: 1
+            rpcName: "frontend"
+            rpcAddress: {{ (print "127.0.0.1:" $temporalGrpcPort) }}
+
+dcRedirectionPolicy:
+    policy: "noop"
+
+{{- $archival := default .Env.ARCHIVAL_ENABLED "false" }}
+archival:
+  history:
+    state: "enabled"
+    enableRead: true
+    provider:
+      filestore:
+        fileMode: "0666"
+        dirMode: "0766"
+      {{- if eq $archival "true" }}
+      s3store:
+        region: "{{ default .Env.ARCHIVAL_S3_REGION "us-east-1" }}"
+        endpoint: "{{ default .Env.ARCHIVAL_S3_ENDPOINT "http://minio:9000" }}"
+        s3ForcePathStyle: {{ default .Env.ARCHIVAL_S3_FORCE_PATH_STYLE "true" }}
+      {{- end }}
+  visibility:
+    state: "enabled"
+    enableRead: true
+    provider:
+      filestore:
+        fileMode: "0666"
+        dirMode: "0766"
+      {{- if eq $archival "true" }}
+      s3store:
+        region: "{{ default .Env.ARCHIVAL_S3_REGION "us-east-1" }}"
+        endpoint: "{{ default .Env.ARCHIVAL_S3_ENDPOINT "http://minio:9000" }}"
+        s3ForcePathStyle: {{ default .Env.ARCHIVAL_S3_FORCE_PATH_STYLE "true" }}
+      {{- end }}
+
+namespaceDefaults:
+  archival:
+    history:
+      {{- if eq $archival "true" }}
+      state: "enabled"
+      URI: "s3://{{ default .Env.ARCHIVAL_S3_BUCKET "temporal-archival" }}/history"
+      {{- else }}
+      state: "disabled"
+      URI: "file:///tmp/temporal_archival/development"
+      {{- end }}
+    visibility:
+      {{- if eq $archival "true" }}
+      state: "enabled"
+      URI: "s3://{{ default .Env.ARCHIVAL_S3_BUCKET "temporal-archival" }}/visibility"
+      {{- else }}
+      state: "disabled"
+      URI: "file:///tmp/temporal_vis_archival/development"
+      {{- end }}
+
+dynamicConfigClient:
+    filepath: "{{ default .Env.DYNAMIC_CONFIG_FILE_PATH "/etc/temporal/config/dynamicconfig/docker.yaml" }}"
+    pollInterval: "60s"

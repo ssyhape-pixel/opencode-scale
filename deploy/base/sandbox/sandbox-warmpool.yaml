@@ -1,0 +1,13 @@
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: SandboxWarmPool
+metadata:
+  name: opencode-pool
+spec:
+  templateRef:
+    name: opencode-server
+  minReady: 3
+  maxSize: 50
+  scalePolicy:
+    scaleUpRate: 5
+    scaleDownRate: 2
+    cooldownPeriod: 60s

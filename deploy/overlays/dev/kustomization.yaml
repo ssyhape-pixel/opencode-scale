@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: opencode-scale-dev
+
+patches:
+  # Reduce replicas for dev
+  - target:
+      kind: Deployment
+      name: opencode-scale-router
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: opencode-scale-worker
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  # Reduce warm pool for dev
+  - target:
+      kind: SandboxWarmPool
+      name: opencode-pool
+    patch: |
+      - op: replace
+        path: /spec/minReady
+        value: 1
+      - op: replace
+        path: /spec/maxSize
+        value: 5

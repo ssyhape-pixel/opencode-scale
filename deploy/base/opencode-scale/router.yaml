@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-scale-router
+  labels:
+    app: opencode-scale-router
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: opencode-scale-router
+  template:
+    metadata:
+      labels:
+        app: opencode-scale-router
+    spec:
+      containers:
+        - name: router
+          image: ghcr.io/opencode-scale/opencode-scale:latest
+          command: ["/router"]
+          env:
+            - name: ROUTER_LISTEN_ADDR
+              value: ":8080"
+            - name: POOL_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: TEMPORAL_HOST_PORT
+              value: "temporal:7233"
+            - name: OTEL_ENDPOINT
+              value: "otel-collector:4317"
+            - name: LITELLM_ENDPOINT
+              value: "http://litellm:4000"
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opencode-scale-router
+  labels:
+    app: opencode-scale-router
+spec:
+  selector:
+    app: opencode-scale-router
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090

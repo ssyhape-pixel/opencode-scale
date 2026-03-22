@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-controller
+  labels:
+    {{- include "opencode-scale.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+spec:
+  replicas: {{ .Values.controller.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "opencode-scale.componentSelectorLabels" (dict "root" . "component" "controller") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with (merge (.Values.controller.podAnnotations | default dict) (.Values.podAnnotations | default dict)) }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "opencode-scale.componentLabels" (dict "root" . "component" "controller") | nindent 8 }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "opencode-scale.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: controller
+          image: {{ include "opencode-scale.image" (dict "imageValues" .Values.controller.image "chart" .Chart) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["/controller"]
+          args:
+            - "--config=/etc/opencode-scale/config.yaml"
+          env:
+            - name: POOL_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- with .Values.controller.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.config.telemetry.prometheusPort }}
+              protocol: TCP
+          {{- with .Values.controller.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.controller.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.controller.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/opencode-scale
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "opencode-scale.configmapName" . }}
+      {{- with (.Values.controller.nodeSelector | default .Values.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (.Values.controller.affinity | default .Values.affinity) }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (.Values.controller.tolerations | default .Values.tolerations) }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-controller
+  labels:
+    {{- include "opencode-scale.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+  {{- with .Values.controller.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "opencode-scale.componentSelectorLabels" (dict "root" . "component" "controller") | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.controller.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+{{- if .Values.controller.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-controller
+  labels:
+    {{- include "opencode-scale.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+rules:
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes", "sandboxclaims", "sandboxtemplates", "sandboxwarmpools"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "opencode-scale.fullname" . }}-controller
+  labels:
+    {{- include "opencode-scale.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "opencode-scale.fullname" . }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "opencode-scale.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
