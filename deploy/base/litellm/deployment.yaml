@@ -16,7 +16,10 @@ spec:
     spec:
       containers:
         - name: litellm
-          image: ghcr.io/berriai/litellm:main-latest
+          # Pinned to stable release. Do NOT use main-latest (floating tag).
+          # CVE-2026-33634: PyPI versions 1.82.7-1.82.8 were compromised.
+          # Docker images were not directly affected, but pin for safety.
+          image: ghcr.io/berriai/litellm:main-v1.82.3-stable.patch.2
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
             - containerPort: 4000

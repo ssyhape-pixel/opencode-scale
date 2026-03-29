@@ -28,7 +28,8 @@ services:
     command: ["/mock-llm-api", "-rpm", "5", "-tpm", "10000", "-latency", "200"]
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    # Pinned to stable release. See CVE-2026-33634.
+    image: ghcr.io/berriai/litellm:main-v1.82.3-stable.patch.2
     ports:
       - "4000:4000"
     command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
